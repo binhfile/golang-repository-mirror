@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go mod tidy:*)",
+      "Bash(go build:*)",
+      "Bash(export ATHENS_DISK_STORAGE_ROOT=/tmp/athens-storage)",
+      "Bash(./athens-prefill:*)",
+      "Bash(tree:*)",
+      "Bash(cat:*)",
+      "Bash(unzip:*)",
+      "Bash(ls:*)",
+      "Bash(go test:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
