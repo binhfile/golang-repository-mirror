@@ -9,7 +9,10 @@
       "Bash(cat:*)",
       "Bash(unzip:*)",
       "Bash(ls:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(git push:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
