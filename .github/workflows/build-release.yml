@@ -31,7 +31,13 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             OUTPUT_NAME="${OUTPUT_NAME}.exe"
           fi
-          go build -v -o "${OUTPUT_NAME}" ./cmd/athens-prefill
+
+          BUILD_FLAGS="-v"
+          if [ "${{ matrix.goos }}" = "linux" ]; then
+            BUILD_FLAGS="${BUILD_FLAGS} -ldflags '-s -w -extldflags -static'"
+          fi
+
+          go build ${BUILD_FLAGS} -o "${OUTPUT_NAME}" ./cmd/athens-prefill
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
