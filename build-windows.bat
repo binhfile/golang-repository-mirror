@@ -11,6 +11,7 @@ set GOOS=windows
 set GOARCH=amd64
 
 REM Build the executable with optimizations
+REM Note: Windows binaries are statically linked by default
 go build -v ^
   -ldflags="-s -w" ^
   -o go-mod-clone.exe ^

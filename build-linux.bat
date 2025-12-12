@@ -13,7 +13,7 @@ set CGO_ENABLED=0
 
 REM Build the static executable with optimizations
 go build -v ^
-  -ldflags="-s -w" ^
+  -ldflags="-s -w -extldflags -static" ^
   -o go-mod-clone ^
   ./cmd/go-mod-clone
 
