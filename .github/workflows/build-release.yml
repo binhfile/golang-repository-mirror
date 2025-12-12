@@ -32,10 +32,12 @@ jobs:
             OUTPUT_NAME="${OUTPUT_NAME}.exe"
           fi
 
+          # Build flags: -s (strip symbols), -w (strip debug), -extldflags=-static (static linking on Linux)
           if [ "${{ matrix.goos }}" = "linux" ]; then
             go build -v -ldflags="-s -w -extldflags=-static" -o "${OUTPUT_NAME}" ./cmd/go-mod-clone
           else
-            go build -v -o "${OUTPUT_NAME}" ./cmd/go-mod-clone
+            # Windows binaries are statically linked by default
+            go build -v -ldflags="-s -w" -o "${OUTPUT_NAME}" ./cmd/go-mod-clone
           fi
 
       - name: Upload artifact
