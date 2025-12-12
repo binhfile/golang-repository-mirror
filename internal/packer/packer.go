@@ -1,14 +1,12 @@
 package packer
 
 import (
-	"archive/zip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/example/athens-prefill/internal/gomod"
 	"github.com/example/athens-prefill/internal/log"
@@ -18,62 +16,54 @@ type Packer struct {
 	storageRoot string
 }
 
-type VersionInfo struct {
-	Version string `json:"Version"`
-	Time    string `json:"Time"`
-}
-
 func NewPacker(storageRoot string) *Packer {
 	return &Packer{storageRoot: storageRoot}
 }
 
 func (p *Packer) Pack(module gomod.Module) error {
-	// Build target directory path
-	targetDir := filepath.Join(p.storageRoot, module.Path, module.Version)
+	// Build target @v directory path
+	atVDir := filepath.Join(p.storageRoot, module.Path, "@v")
 
-	// Check if already exists (idempotent)
-	sourceZipPath := filepath.Join(targetDir, "source.zip")
-	if _, err := os.Stat(sourceZipPath); err == nil {
+	// Check if already exists (idempotent) - check for .zip file
+	targetZip := filepath.Join(atVDir, module.Version+".zip")
+	if _, err := os.Stat(targetZip); err == nil {
 		log.Info("Module already exists: %s@%s, skipping", module.Path, module.Version)
 		return nil
 	}
 
 	log.Info("Packing module: %s@%s", module.Path, module.Version)
 
-	// Create target directory
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		return fmt.Errorf("failed to create target directory: %w", err)
+	// Create @v directory
+	if err := os.MkdirAll(atVDir, 0755); err != nil {
+		return fmt.Errorf("failed to create @v directory: %w", err)
 	}
 
-	// Copy go.mod file
-	srcGoMod := filepath.Join(module.Dir, "go.mod")
-	dstGoMod := filepath.Join(targetDir, "go.mod")
-	if err := copyFile(srcGoMod, dstGoMod); err != nil {
-		// go.mod might not exist, log warning but continue
-		log.Debug("Warning: go.mod not found in %s: %v", module.Dir, err)
-		// Create minimal go.mod
-		if err := os.WriteFile(dstGoMod, []byte(fmt.Sprintf("module %s\n\ngo 1.21\n", module.Path)), 0644); err != nil {
-			return fmt.Errorf("failed to create go.mod: %w", err)
+	// Copy .info file from cache
+	if module.InfoFile != "" {
+		targetInfo := filepath.Join(atVDir, module.Version+".info")
+		if err := copyFile(module.InfoFile, targetInfo); err != nil {
+			log.Debug("Warning: failed to copy .info file: %v", err)
 		}
 	}
 
-	// Create .info file
-	infoFile := filepath.Join(targetDir, module.Version+".info")
-	versionInfo := VersionInfo{
-		Version: module.Version,
-		Time:    time.Now().UTC().Format(time.RFC3339),
-	}
-	infoData, err := json.MarshalIndent(versionInfo, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal version info: %w", err)
-	}
-	if err := os.WriteFile(infoFile, infoData, 0644); err != nil {
-		return fmt.Errorf("failed to write version info: %w", err)
+	// Copy .mod file from cache
+	if module.ModFile != "" {
+		targetMod := filepath.Join(atVDir, module.Version+".mod")
+		if err := copyFile(module.ModFile, targetMod); err != nil {
+			log.Debug("Warning: failed to copy .mod file: %v", err)
+		}
 	}
 
-	// Create source.zip
-	if err := zipDirectory(module.Dir, sourceZipPath, module.Path); err != nil {
-		return fmt.Errorf("failed to create source.zip: %w", err)
+	// Copy .zip file from cache
+	if module.ZipFile != "" {
+		if err := copyFile(module.ZipFile, targetZip); err != nil {
+			return fmt.Errorf("failed to copy .zip file: %w", err)
+		}
+	}
+
+	// Update list file (with file locking for concurrent access)
+	if err := p.updateListFile(atVDir, module.Version); err != nil {
+		return fmt.Errorf("failed to update list file: %w", err)
 	}
 
 	log.Debug("Successfully packed: %s@%s", module.Path, module.Version)
@@ -97,82 +87,46 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func zipDirectory(sourceDir, zipPath, modulePath string) error {
-	zipFile, err := os.Create(zipPath)
+func (p *Packer) updateListFile(atVDir, version string) error {
+	listPath := filepath.Join(atVDir, "list")
+
+	// Use file locking for concurrent writes
+	lockPath := listPath + ".lock"
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to create zip file: %w", err)
-	}
-	defer zipFile.Close()
-
-	writer := zip.NewWriter(zipFile)
-	defer writer.Close()
-
-	err = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip .git directories and cache files
-		if strings.Contains(path, ".git") || strings.Contains(path, ".mod.cache") {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return err
-		}
-
-		// Add module path prefix to zip entries
-		zipEntryPath := filepath.Join(modulePath+"@"+extractVersion(sourceDir), relPath)
-		zipEntryPath = filepath.ToSlash(zipEntryPath)
-
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		header, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return err
-		}
-		header.Name = zipEntryPath
-
-		writer, err := writer.CreateHeader(header)
-		if err != nil {
-			return err
-		}
-
-		_, err = io.Copy(writer, file)
 		return err
-	})
+	}
+	defer lockFile.Close()
+	defer os.Remove(lockPath)
 
-	return err
-}
-
-func extractVersion(moduleDir string) string {
-	// Try to extract version from go.mod
-	goModPath := filepath.Join(moduleDir, "go.mod")
-	if content, err := os.ReadFile(goModPath); err == nil {
-		lines := strings.Split(string(content), "\n")
+	// Read existing versions
+	versions := make(map[string]bool)
+	if data, err := os.ReadFile(listPath); err == nil {
+		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
-			if strings.HasPrefix(line, "module ") {
-				parts := strings.Fields(line)
-				if len(parts) >= 2 {
-					moduleName := parts[1]
-					if idx := strings.LastIndex(moduleName, "@"); idx > 0 {
-										return moduleName[idx+1:]
-					}
-				}
+			if line = strings.TrimSpace(line); line != "" {
+				versions[line] = true
 			}
 		}
 	}
-	return "unknown"
+
+	// Add new version if not present
+	if !versions[version] {
+		versions[version] = true
+
+		// Write all versions sorted
+		var versionList []string
+		for v := range versions {
+			versionList = append(versionList, v)
+		}
+		sort.Strings(versionList)
+
+		content := strings.Join(versionList, "\n") + "\n"
+		if err := os.WriteFile(listPath, []byte(content), 0644); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
+

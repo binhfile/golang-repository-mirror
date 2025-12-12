@@ -85,15 +85,19 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 		log.Debug("go mod download -json completed")
 	}
 
-	// Build maps of module paths to Dir/Zip from download output
+	// Build maps of module paths to Dir/Zip/Info/GoMod from download output
 	modulePathMap := make(map[string]string)  // Path -> Dir
-	moduleZipMap := make(map[string]string)   // Path -> Zip
+	moduleZipMap := make(map[string]string)   // Path -> Zip file path
+	moduleInfoMap := make(map[string]string)  // Path -> Info file path
+	moduleModMap := make(map[string]string)   // Path -> GoMod file path
 	dlDecoder := json.NewDecoder(&dlStdout)
 	for dlDecoder.More() {
 		var dlInfo struct {
-			Path string `json:"Path"`
-			Dir  string `json:"Dir"`
-			Zip  string `json:"Zip"`
+			Path  string `json:"Path"`
+			Dir   string `json:"Dir"`
+			Zip   string `json:"Zip"`
+			Info  string `json:"Info"`
+			GoMod string `json:"GoMod"`
 		}
 		if err := dlDecoder.Decode(&dlInfo); err != nil {
 			continue
@@ -104,9 +108,16 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 				log.Debug("Module download info: %s -> %s", dlInfo.Path, dlInfo.Dir)
 			}
 			if dlInfo.Zip != "" {
-				// Store zip path as fallback
-				moduleZipMap[dlInfo.Path] = filepath.Dir(dlInfo.Zip)
-				log.Debug("Module zip path: %s -> %s", dlInfo.Path, filepath.Dir(dlInfo.Zip))
+				moduleZipMap[dlInfo.Path] = dlInfo.Zip
+				log.Debug("Module zip path: %s -> %s", dlInfo.Path, dlInfo.Zip)
+			}
+			if dlInfo.Info != "" {
+				moduleInfoMap[dlInfo.Path] = dlInfo.Info
+				log.Debug("Module info path: %s -> %s", dlInfo.Path, dlInfo.Info)
+			}
+			if dlInfo.GoMod != "" {
+				moduleModMap[dlInfo.Path] = dlInfo.GoMod
+				log.Debug("Module mod path: %s -> %s", dlInfo.Path, dlInfo.GoMod)
 			}
 		}
 	}
@@ -154,10 +165,6 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 			if dir, ok := modulePathMap[info.Path]; ok {
 				moduleDir = dir
 				log.Debug("Found module Dir: %s@%s -> %s", info.Path, info.Version, moduleDir)
-			} else if zipDir, ok := moduleZipMap[info.Path]; ok {
-				// Use zip dir as fallback (contains go.mod, .zip, .info files)
-				moduleDir = zipDir
-				log.Debug("Found module via zip cache: %s@%s -> %s", info.Path, info.Version, moduleDir)
 			} else {
 				log.Debug("Skipping %s@%s - cannot locate in module cache", info.Path, info.Version)
 				continue
@@ -165,9 +172,12 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 		}
 
 		modules = append(modules, gomod.Module{
-			Path:    info.Path,
-			Version: info.Version,
-			Dir:     moduleDir,
+			Path:     info.Path,
+			Version:  info.Version,
+			Dir:      moduleDir,
+			InfoFile: moduleInfoMap[info.Path],
+			ModFile:  moduleModMap[info.Path],
+			ZipFile:  moduleZipMap[info.Path],
 		})
 
 		log.Debug("Resolved: %s@%s -> %s", info.Path, info.Version, moduleDir)

@@ -11,9 +11,12 @@ type ModuleSpec struct {
 }
 
 type Module struct {
-	Path    string
-	Version string
-	Dir     string
+	Path     string
+	Version  string
+	Dir      string
+	InfoFile string // Path to .info file in cache
+	ModFile  string // Path to .mod file in cache
+	ZipFile  string // Path to .zip file in cache
 }
 
 func ParseModulesList(content string) ([]ModuleSpec, error) {
