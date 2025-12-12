@@ -8,6 +8,7 @@ import (
 	"github.com/example/go-mod-clone/internal/log"
 	"github.com/example/go-mod-clone/internal/packer"
 	"github.com/example/go-mod-clone/internal/resolver"
+	"github.com/example/go-mod-clone/internal/server"
 	"github.com/example/go-mod-clone/internal/worker"
 	"github.com/spf13/cobra"
 )
@@ -18,6 +19,8 @@ var (
 	workDir      string
 	concurrency  int
 	logLevel     string
+	host         string
+	port         int
 )
 
 var rootCmd = &cobra.Command{
@@ -30,7 +33,18 @@ and organize them in Go module proxy format for offline usage.`,
 	},
 }
 
+var serverCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Run as a Go module proxy server",
+	Long: `Start a file server that serves modules in Go module proxy format.
+Configure your Go environment with: export GOPROXY=http://host:port`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runServer()
+	},
+}
+
 func init() {
+	// Root command flags
 	rootCmd.Flags().StringVarP(&modulesFile, "modules", "m", "", "Path to modules.txt file (required)")
 	rootCmd.Flags().StringVarP(&storageRoot, "storage-root", "s", "", "Athens disk storage root directory")
 	rootCmd.Flags().StringVarP(&workDir, "work-dir", "w", "", "Temporary work directory")
@@ -38,6 +52,17 @@ func init() {
 	rootCmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
 
 	rootCmd.MarkFlagRequired("modules")
+
+	// Server command flags
+	serverCmd.Flags().StringVarP(&storageRoot, "storage-root", "s", "", "Module storage root directory (required)")
+	serverCmd.Flags().StringVarP(&host, "host", "H", "localhost", "Server host address")
+	serverCmd.Flags().IntVarP(&port, "port", "p", 3000, "Server port")
+	serverCmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+
+	serverCmd.MarkFlagRequired("storage-root")
+
+	// Add subcommand to root
+	rootCmd.AddCommand(serverCmd)
 }
 
 func Execute() {
@@ -146,4 +171,18 @@ func parseModulesList(filepath string) ([]gomod.ModuleSpec, error) {
 	}
 
 	return gomod.ParseModulesList(string(content))
+}
+
+func runServer() error {
+	// Setup logger
+	log.SetLevelFromString(logLevel)
+
+	log.Info("Starting go-mod-clone server")
+	log.Info("Storage root: %s", storageRoot)
+	log.Info("Host: %s", host)
+	log.Info("Port: %d", port)
+
+	// Create and start server
+	srv := server.NewServer(storageRoot, host, port)
+	return srv.Start()
 }
