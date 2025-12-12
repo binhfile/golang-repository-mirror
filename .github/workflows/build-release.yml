@@ -27,22 +27,22 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          OUTPUT_NAME="athens-prefill"
+          OUTPUT_NAME="go-mod-clone"
           if [ "${{ matrix.goos }}" = "windows" ]; then
             OUTPUT_NAME="${OUTPUT_NAME}.exe"
           fi
 
           if [ "${{ matrix.goos }}" = "linux" ]; then
-            go build -v -ldflags="-s -w -extldflags=-static" -o "${OUTPUT_NAME}" ./cmd/athens-prefill
+            go build -v -ldflags="-s -w -extldflags=-static" -o "${OUTPUT_NAME}" ./cmd/go-mod-clone
           else
-            go build -v -o "${OUTPUT_NAME}" ./cmd/athens-prefill
+            go build -v -o "${OUTPUT_NAME}" ./cmd/go-mod-clone
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: athens-prefill-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: athens-prefill*
+          name: go-mod-clone-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: go-mod-clone*
           retention-days: 5
 
   release:
@@ -64,10 +64,10 @@ jobs:
           mkdir -p release
 
           # Copy Windows executable
-          cp artifacts/athens-prefill-windows-amd64/athens-prefill.exe release/athens-prefill-windows-amd64.exe
+          cp artifacts/go-mod-clone-windows-amd64/go-mod-clone.exe release/go-mod-clone-windows-amd64.exe
 
           # Copy Linux executable
-          cp artifacts/athens-prefill-linux-amd64/athens-prefill release/athens-prefill-linux-amd64
+          cp artifacts/go-mod-clone-linux-amd64/go-mod-clone release/go-mod-clone-linux-amd64
 
           # List release files
           ls -lah release/

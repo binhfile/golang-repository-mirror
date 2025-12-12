@@ -4,7 +4,7 @@
       "Bash(go mod tidy:*)",
       "Bash(go build:*)",
       "Bash(export ATHENS_DISK_STORAGE_ROOT=/tmp/athens-storage)",
-      "Bash(./athens-prefill:*)",
+      "Bash(./go-mod-clone:*)",
       "Bash(tree:*)",
       "Bash(cat:*)",
       "Bash(unzip:*)",
@@ -12,7 +12,12 @@
       "Bash(go test:*)",
       "Bash(git push:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(./go-mod-clone.exe:*)",
+      "Bash(git tag:*)",
+      "Bash(go env:*)",
+      "Bash(find:*)",
+      "Bash(go mod download:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,4 +1,4 @@
-module github.com/example/athens-prefill
+module github.com/example/go-mod-clone
 
 go 1.21
 

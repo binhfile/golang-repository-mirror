@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/example/athens-prefill/internal/gomod"
-	"github.com/example/athens-prefill/internal/log"
-	"github.com/example/athens-prefill/internal/packer"
-	"github.com/example/athens-prefill/internal/resolver"
-	"github.com/example/athens-prefill/internal/worker"
+	"github.com/example/go-mod-clone/internal/gomod"
+	"github.com/example/go-mod-clone/internal/log"
+	"github.com/example/go-mod-clone/internal/packer"
+	"github.com/example/go-mod-clone/internal/resolver"
+	"github.com/example/go-mod-clone/internal/worker"
 	"github.com/spf13/cobra"
 )
 
@@ -21,10 +21,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "athens-prefill",
-	Short: "Prefill Athens proxy cache with Go modules",
-	Long: `athens-prefill is a tool to download Go modules and their dependencies,
-and package them in Athens disk storage format for offline usage.`,
+	Use:   "go-mod-clone",
+	Short: "Clone Go modules and their dependencies to a local repository",
+	Long: `go-mod-clone is a tool to download Go modules and their dependencies,
+and organize them in Go module proxy format for offline usage.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runPrefill()
 	},
@@ -61,7 +61,7 @@ func runPrefill() error {
 	// Setup work directory
 	if workDir == "" {
 		var err error
-		workDir, err = os.MkdirTemp("", "athens-prefill-")
+		workDir, err = os.MkdirTemp("", "go-mod-clone-")
 		if err != nil {
 			return fmt.Errorf("failed to create temp directory: %w", err)
 		}
@@ -72,7 +72,7 @@ func runPrefill() error {
 		}
 	}
 
-	log.Info("Starting athens-prefill")
+	log.Info("Starting go-mod-clone")
 	log.Debug("Storage root: %s", storageRoot)
 	log.Debug("Work directory: %s", workDir)
 	log.Debug("Concurrency: %d", concurrency)

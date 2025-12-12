@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/example/athens-prefill/internal/gomod"
-	"github.com/example/athens-prefill/internal/log"
+	"github.com/example/go-mod-clone/internal/gomod"
+	"github.com/example/go-mod-clone/internal/log"
 )
 
 type Resolver struct {
