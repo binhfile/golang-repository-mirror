@@ -1,0 +1,30 @@
+# Simple version - minimal configuration
+# Use this if you prefer a simpler setup without security hardening
+
+[Unit]
+Description=Go Module Proxy Server
+After=network.target
+
+[Service]
+Type=simple
+User=go-mod-clone
+Group=go-mod-clone
+WorkingDirectory=/opt/go-mod-clone
+
+# Run the server
+ExecStart=/usr/local/bin/go-mod-clone server \
+  --storage-root /var/lib/go-mod-clone/modules \
+  --host 0.0.0.0 \
+  --port 3000
+
+# Auto-restart on failure
+Restart=on-failure
+RestartSec=10s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=go-mod-clone
+
+[Install]
+WantedBy=multi-user.target

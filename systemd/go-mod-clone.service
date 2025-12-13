@@ -1,0 +1,46 @@
+[Unit]
+Description=Go Module Proxy Server
+Documentation=https://github.com/binhfile/golang-repository-mirror
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=go-mod-clone
+Group=go-mod-clone
+
+# Service working directory
+WorkingDirectory=/opt/go-mod-clone
+
+# The actual command to start the service
+ExecStart=/usr/local/bin/go-mod-clone server \
+  --storage-root /var/lib/go-mod-clone/modules \
+  --host 0.0.0.0 \
+  --port 3000 \
+  --log-level info
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/go-mod-clone
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+# Environment variables
+Environment="GOMAXPROCS=4"
+
+# Standard output/error logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=go-mod-clone
+
+[Install]
+WantedBy=multi-user.target
