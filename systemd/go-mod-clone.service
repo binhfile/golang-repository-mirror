@@ -6,8 +6,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=go-mod-clone
-Group=go-mod-clone
 
 # Service working directory
 WorkingDirectory=/opt/go-mod-clone

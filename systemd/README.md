@@ -19,22 +19,15 @@ This directory contains a systemd service file for running `go-mod-clone` in ser
 - `go-mod-clone` binary built and installed
 - Root access to manage systemd services
 
-### Step 1: Create dedicated user and group
-
-```bash
-sudo useradd --system --home /var/lib/go-mod-clone --shell /bin/false go-mod-clone
-```
-
-### Step 2: Create storage directory
+### Step 1: Create storage directory
 
 ```bash
 sudo mkdir -p /var/lib/go-mod-clone/modules
-sudo chown -R go-mod-clone:go-mod-clone /var/lib/go-mod-clone
 sudo chmod 0755 /var/lib/go-mod-clone
-sudo chmod 0750 /var/lib/go-mod-clone/modules
+sudo chmod 0755 /var/lib/go-mod-clone/modules
 ```
 
-### Step 3: Install the binary
+### Step 2: Install the binary
 
 ```bash
 # Download or build the binary
@@ -45,14 +38,14 @@ sudo mv go-mod-clone-linux-amd64 /usr/local/bin/go-mod-clone
 sudo chmod +x /usr/local/bin/go-mod-clone
 ```
 
-### Step 4: Install the service file
+### Step 3: Install the service file
 
 ```bash
 sudo cp go-mod-clone.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
-### Step 5: Enable and start the service
+### Step 4: Enable and start the service
 
 ```bash
 # Enable the service to start on boot
@@ -147,8 +140,8 @@ golang.org/x/crypto@v0.46.0
 github.com/gin-gonic/gin@v1.9.1
 EOF
 
-# Run the prefill mode as the go-mod-clone user
-sudo -u go-mod-clone /usr/local/bin/go-mod-clone \
+# Run the prefill mode
+sudo /usr/local/bin/go-mod-clone \
   --modules /tmp/modules.txt \
   --storage-root /var/lib/go-mod-clone/modules \
   --concurrency 4
@@ -184,10 +177,9 @@ sudo journalctl -u go-mod-clone -n 100
 
 ### Permission denied errors
 
-Ensure the `go-mod-clone` user owns the storage directory:
+Ensure the storage directory has proper permissions:
 ```bash
-sudo chown -R go-mod-clone:go-mod-clone /var/lib/go-mod-clone
-sudo chmod -R 0750 /var/lib/go-mod-clone
+sudo chmod -R 0755 /var/lib/go-mod-clone
 ```
 
 ### Port already in use
@@ -238,10 +230,6 @@ sudo systemctl disable go-mod-clone
 # Remove service file
 sudo rm /etc/systemd/system/go-mod-clone.service
 sudo systemctl daemon-reload
-
-# Remove user and group (optional)
-sudo userdel go-mod-clone
-sudo groupdel go-mod-clone
 
 # Remove storage directory (optional)
 sudo rm -rf /var/lib/go-mod-clone

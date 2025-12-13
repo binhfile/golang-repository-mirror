@@ -7,8 +7,6 @@ After=network.target
 
 [Service]
 Type=simple
-User=go-mod-clone
-Group=go-mod-clone
 WorkingDirectory=/opt/go-mod-clone
 
 # Run the server
