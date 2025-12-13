@@ -32,8 +32,35 @@ func NewResolver(workDir string) *Resolver {
 }
 
 func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module, error) {
+	var modules []gomod.Module
+
+	// Group specs by module path to handle multiple versions
+	specsByPath := make(map[string][]gomod.ModuleSpec)
+	for _, spec := range specs {
+		specsByPath[spec.Path] = append(specsByPath[spec.Path], spec)
+	}
+
+	// Process each module path with its versions
+	for _, pathSpecs := range specsByPath {
+		for _, spec := range pathSpecs {
+			// For each requested module (with or without version), download and resolve it
+			resolvedMods, err := r.resolveModule(spec)
+			if err != nil {
+				log.Error("Failed to resolve %s@%s: %v", spec.Path, spec.Version, err)
+				return nil, fmt.Errorf("failed to resolve %s@%s: %w", spec.Path, spec.Version, err)
+			}
+			modules = append(modules, resolvedMods...)
+		}
+	}
+
+	return modules, nil
+}
+
+func (r *Resolver) resolveModule(spec gomod.ModuleSpec) ([]gomod.Module, error) {
 	// Create a temporary directory for go mod resolution
+	// Use a simple naming scheme since multiple versions will be handled in sequence
 	tempDir := filepath.Join(r.workDir, "resolve-temp")
+
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
@@ -45,24 +72,22 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 		return nil, fmt.Errorf("failed to create temporary go.mod: %w", err)
 	}
 
-	// Run go get -d for each module to download (not build)
-	for _, spec := range specs {
-		getSpec := spec.Path
-		if spec.Version != "" {
-			getSpec = spec.Path + "@" + spec.Version
-		}
+	// Download the specific module version
+	getSpec := spec.Path
+	if spec.Version != "" {
+		getSpec = spec.Path + "@" + spec.Version
+	}
 
-		log.Debug("Running 'go get -d %s' in %s", getSpec, tempDir)
-		getCmd := exec.Command("go", "get", "-d", getSpec)
-		getCmd.Dir = tempDir
+	log.Debug("Running 'go get -d %s' in %s", getSpec, tempDir)
+	getCmd := exec.Command("go", "get", "-d", getSpec)
+	getCmd.Dir = tempDir
 
-		var getStderr bytes.Buffer
-		getCmd.Stderr = &getStderr
+	var getStderr bytes.Buffer
+	getCmd.Stderr = &getStderr
 
-		if err := getCmd.Run(); err != nil {
-			log.Error("go get -d %s stderr: %s", getSpec, getStderr.String())
-			return nil, fmt.Errorf("go get -d %s failed: %w", getSpec, err)
-		}
+	if err := getCmd.Run(); err != nil {
+		log.Error("go get -d %s stderr: %s", getSpec, getStderr.String())
+		return nil, fmt.Errorf("go get -d %s failed: %w", getSpec, err)
 	}
 
 	// Download ALL modules (including transitive dependencies)
@@ -86,38 +111,41 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 	}
 
 	// Build maps of module paths to Dir/Zip/Info/GoMod from download output
-	modulePathMap := make(map[string]string)  // Path -> Dir
-	moduleZipMap := make(map[string]string)   // Path -> Zip file path
-	moduleInfoMap := make(map[string]string)  // Path -> Info file path
-	moduleModMap := make(map[string]string)   // Path -> GoMod file path
+	// Using Path@Version as key to support multiple versions of the same module
+	modulePathMap := make(map[string]string)  // Path@Version -> Dir
+	moduleZipMap := make(map[string]string)   // Path@Version -> Zip file path
+	moduleInfoMap := make(map[string]string)  // Path@Version -> Info file path
+	moduleModMap := make(map[string]string)   // Path@Version -> GoMod file path
 	dlDecoder := json.NewDecoder(&dlStdout)
 	for dlDecoder.More() {
 		var dlInfo struct {
-			Path  string `json:"Path"`
-			Dir   string `json:"Dir"`
-			Zip   string `json:"Zip"`
-			Info  string `json:"Info"`
-			GoMod string `json:"GoMod"`
+			Path    string `json:"Path"`
+			Version string `json:"Version"`
+			Dir     string `json:"Dir"`
+			Zip     string `json:"Zip"`
+			Info    string `json:"Info"`
+			GoMod   string `json:"GoMod"`
 		}
 		if err := dlDecoder.Decode(&dlInfo); err != nil {
 			continue
 		}
 		if dlInfo.Path != "" {
+			key := dlInfo.Path + "@" + dlInfo.Version
 			if dlInfo.Dir != "" {
-				modulePathMap[dlInfo.Path] = dlInfo.Dir
-				log.Debug("Module download info: %s -> %s", dlInfo.Path, dlInfo.Dir)
+				modulePathMap[key] = dlInfo.Dir
+				log.Debug("Module download info: %s -> %s", key, dlInfo.Dir)
 			}
 			if dlInfo.Zip != "" {
-				moduleZipMap[dlInfo.Path] = dlInfo.Zip
-				log.Debug("Module zip path: %s -> %s", dlInfo.Path, dlInfo.Zip)
+				moduleZipMap[key] = dlInfo.Zip
+				log.Debug("Module zip path: %s -> %s", key, dlInfo.Zip)
 			}
 			if dlInfo.Info != "" {
-				moduleInfoMap[dlInfo.Path] = dlInfo.Info
-				log.Debug("Module info path: %s -> %s", dlInfo.Path, dlInfo.Info)
+				moduleInfoMap[key] = dlInfo.Info
+				log.Debug("Module info path: %s -> %s", key, dlInfo.Info)
 			}
 			if dlInfo.GoMod != "" {
-				moduleModMap[dlInfo.Path] = dlInfo.GoMod
-				log.Debug("Module mod path: %s -> %s", dlInfo.Path, dlInfo.GoMod)
+				moduleModMap[key] = dlInfo.GoMod
+				log.Debug("Module mod path: %s -> %s", key, dlInfo.GoMod)
 			}
 		}
 	}
@@ -160,13 +188,14 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 
 		// Get module directory from either go list or from download map
 		moduleDir := info.Dir
+		key := info.Path + "@" + info.Version
 		if moduleDir == "" {
 			// For indirect dependencies, try to find them in the download map
-			if dir, ok := modulePathMap[info.Path]; ok {
+			if dir, ok := modulePathMap[key]; ok {
 				moduleDir = dir
-				log.Debug("Found module Dir: %s@%s -> %s", info.Path, info.Version, moduleDir)
+				log.Debug("Found module Dir: %s -> %s", key, moduleDir)
 			} else {
-				log.Debug("Skipping %s@%s - cannot locate in module cache", info.Path, info.Version)
+				log.Debug("Skipping %s - cannot locate in module cache", key)
 				continue
 			}
 		}
@@ -175,12 +204,12 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 			Path:     info.Path,
 			Version:  info.Version,
 			Dir:      moduleDir,
-			InfoFile: moduleInfoMap[info.Path],
-			ModFile:  moduleModMap[info.Path],
-			ZipFile:  moduleZipMap[info.Path],
+			InfoFile: moduleInfoMap[key],
+			ModFile:  moduleModMap[key],
+			ZipFile:  moduleZipMap[key],
 		})
 
-		log.Debug("Resolved: %s@%s -> %s", info.Path, info.Version, moduleDir)
+		log.Debug("Resolved: %s -> %s", key, moduleDir)
 	}
 
 	return modules, nil

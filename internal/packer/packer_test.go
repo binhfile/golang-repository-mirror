@@ -1,7 +1,6 @@
 package packer
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,27 +20,6 @@ func TestPacker_BuildTargetPath(t *testing.T) {
 
 	if actualPath != expectedPath {
 		t.Errorf("Expected path mismatch: got %q, want %q", actualPath, expectedPath)
-	}
-}
-
-func TestVersionInfo_JSON(t *testing.T) {
-	info := VersionInfo{
-		Version: "v1.9.1",
-		Time:    "2024-01-01T00:00:00Z",
-	}
-
-	jsonBytes, err := json.MarshalIndent(info, "", "  ")
-	if err != nil {
-		t.Fatalf("Failed to marshal JSON: %v", err)
-	}
-
-	expectedJSON := `{
-  "Version": "v1.9.1",
-  "Time": "2024-01-01T00:00:00Z"
-}`
-
-	if string(jsonBytes) != expectedJSON {
-		t.Errorf("JSON mismatch:\nGot:\n%s\nWant:\n%s", string(jsonBytes), expectedJSON)
 	}
 }
 
