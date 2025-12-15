@@ -14,13 +14,13 @@ import (
 )
 
 var (
-	modulesFile  string
-	storageRoot  string
-	workDir      string
-	concurrency  int
-	logLevel     string
-	host         string
-	port         int
+	modulesFile string
+	storageRoot string
+	workDir     string
+	concurrency int
+	logLevel    string
+	host        string
+	port        int
 )
 
 var rootCmd = &cobra.Command{
@@ -127,8 +127,11 @@ func runPrefill() error {
 	failureCount := 0
 	var failures []string
 
-	for _, mod := range resolvedModules {
+	modIdx := 1
+	for modKey, mod := range resolvedModules {
 		mod := mod // capture loop variable
+		log.Info("Pack %v/%v %v", modIdx, len(resolvedModules), modKey)
+		modIdx = modIdx + 1
 		pool.Submit(func() {
 			if err := p.Pack(mod); err != nil {
 				failureCount++

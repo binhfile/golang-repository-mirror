@@ -32,28 +32,57 @@ func NewResolver(workDir string) *Resolver {
 }
 
 func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module, error) {
-	var modules []gomod.Module
+	// Track resolved modules by Path@Version to avoid duplicates
+	resolvedModules := make(map[string]gomod.Module)
+	var toProcess []gomod.ModuleSpec
+	processed := make(map[string]bool)
 
-	// Group specs by module path to handle multiple versions
-	specsByPath := make(map[string][]gomod.ModuleSpec)
-	for _, spec := range specs {
-		specsByPath[spec.Path] = append(specsByPath[spec.Path], spec)
-	}
+	// Start with provided specs
+	toProcess = append(toProcess, specs...)
 
-	// Process each module path with its versions
-	for _, pathSpecs := range specsByPath {
-		for _, spec := range pathSpecs {
-			// For each requested module (with or without version), download and resolve it
-			resolvedMods, err := r.resolveModule(spec)
-			if err != nil {
-				log.Error("Failed to resolve %s@%s: %v", spec.Path, spec.Version, err)
-				return nil, fmt.Errorf("failed to resolve %s@%s: %w", spec.Path, spec.Version, err)
+	// Process modules recursively
+	for len(toProcess) > 0 {
+		spec := toProcess[0]
+		toProcess = toProcess[1:]
+
+		// Skip if already processed
+		key := spec.Path + "@" + spec.Version
+		if processed[key] {
+			continue
+		}
+		processed[key] = true
+
+		// Resolve this module and its dependencies
+		log.Info("Resolve [queue %v resolved %v] %v", len(toProcess), len(resolvedModules), key)
+		resolvedMods, err := r.resolveModule(spec)
+		if err != nil {
+			log.Error("Failed to resolve %s@%s: %v", spec.Path, spec.Version, err)
+			//return nil, fmt.Errorf("failed to resolve %s@%s: %w", spec.Path, spec.Version, err)
+		}
+
+		// Add resolved modules to our map
+		for _, mod := range resolvedMods {
+			modKey := mod.Path + "@" + mod.Version
+			resolvedModules[modKey] = mod
+
+			// If this is a new module we haven't seen before, queue it for resolution
+			if !processed[modKey] {
+				log.Info("  -> %v", modKey)
+				toProcess = append(toProcess, gomod.ModuleSpec{
+					Path:    mod.Path,
+					Version: mod.Version,
+				})
 			}
-			modules = append(modules, resolvedMods...)
 		}
 	}
 
-	return modules, nil
+	// Convert map back to slice
+	var result []gomod.Module
+	for _, mod := range resolvedModules {
+		result = append(result, mod)
+	}
+
+	return result, nil
 }
 
 func (r *Resolver) resolveModule(spec gomod.ModuleSpec) ([]gomod.Module, error) {
@@ -91,16 +120,16 @@ func (r *Resolver) resolveModule(spec gomod.ModuleSpec) ([]gomod.Module, error) 
 	}
 
 	// Download ALL modules (including transitive dependencies)
-	log.Debug("Running 'go mod download all' to download all modules")
-	downloadAllCmd := exec.Command("go", "mod", "download", "all")
+	log.Debug("Running 'go mod download' to download all modules")
+	downloadAllCmd := exec.Command("go", "mod", "download")
 	downloadAllCmd.Dir = tempDir
 	if err := downloadAllCmd.Run(); err != nil {
-		log.Debug("go mod download all completed with some warnings")
+		log.Debug("go mod download completed with some warnings")
 	}
 
 	// Now get paths using go mod download -json
-	log.Debug("Running 'go mod download -json all' to get module paths")
-	downloadJsonCmd := exec.Command("go", "mod", "download", "-json", "all")
+	log.Debug("Running 'go mod download -json' to get module paths")
+	downloadJsonCmd := exec.Command("go", "mod", "download", "-json")
 	downloadJsonCmd.Dir = tempDir
 
 	var dlStdout bytes.Buffer
@@ -112,10 +141,10 @@ func (r *Resolver) resolveModule(spec gomod.ModuleSpec) ([]gomod.Module, error) 
 
 	// Build maps of module paths to Dir/Zip/Info/GoMod from download output
 	// Using Path@Version as key to support multiple versions of the same module
-	modulePathMap := make(map[string]string)  // Path@Version -> Dir
-	moduleZipMap := make(map[string]string)   // Path@Version -> Zip file path
-	moduleInfoMap := make(map[string]string)  // Path@Version -> Info file path
-	moduleModMap := make(map[string]string)   // Path@Version -> GoMod file path
+	modulePathMap := make(map[string]string) // Path@Version -> Dir
+	moduleZipMap := make(map[string]string)  // Path@Version -> Zip file path
+	moduleInfoMap := make(map[string]string) // Path@Version -> Info file path
+	moduleModMap := make(map[string]string)  // Path@Version -> GoMod file path
 	dlDecoder := json.NewDecoder(&dlStdout)
 	for dlDecoder.More() {
 		var dlInfo struct {
