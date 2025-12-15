@@ -26,6 +26,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
         run: |
           OUTPUT_NAME="go-mod-clone"
           if [ "${{ matrix.goos }}" = "windows" ]; then
@@ -34,7 +35,7 @@ jobs:
 
           # Build flags: -s (strip symbols), -w (strip debug), -extldflags="-static" (static linking on Linux)
           if [ "${{ matrix.goos }}" = "linux" ]; then
-            go build -v -ldflags="-s -w -extldflags=\"-static\"" -o "${OUTPUT_NAME}" ./cmd/go-mod-clone
+            go build -v -ldflags="-s -w -extldflags='-static'" -o "${OUTPUT_NAME}" ./cmd/go-mod-clone
           else
             # Windows binaries are statically linked by default
             go build -v -ldflags="-s -w" -o "${OUTPUT_NAME}" ./cmd/go-mod-clone
