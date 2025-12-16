@@ -14,13 +14,15 @@ import (
 )
 
 var (
-	modulesFile string
-	storageRoot string
-	workDir     string
-	concurrency int
-	logLevel    string
-	host        string
-	port        int
+	modulesFile    string
+	storageRoot    string
+	workDir        string
+	concurrency    int
+	logLevel       string
+	host           string
+	port           int
+	useCache       bool
+	clearCache     bool
 )
 
 var rootCmd = &cobra.Command{
@@ -50,6 +52,8 @@ func init() {
 	rootCmd.Flags().StringVarP(&workDir, "work-dir", "w", "", "Temporary work directory")
 	rootCmd.Flags().IntVarP(&concurrency, "concurrency", "j", 4, "Number of concurrent workers")
 	rootCmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	rootCmd.Flags().BoolVar(&useCache, "use-cache", true, "Use resolution cache to speed up subsequent runs")
+	rootCmd.Flags().BoolVar(&clearCache, "clear-cache", false, "Clear resolution cache before starting")
 
 	rootCmd.MarkFlagRequired("modules")
 
@@ -101,6 +105,17 @@ func runPrefill() error {
 	log.Debug("Storage root: %s", storageRoot)
 	log.Debug("Work directory: %s", workDir)
 	log.Debug("Concurrency: %d", concurrency)
+	log.Debug("Use cache: %v", useCache)
+
+	// Clear cache if requested
+	if clearCache {
+		cacheFile := fmt.Sprintf("%s/resolution-cache.json", workDir)
+		if err := os.Remove(cacheFile); err != nil && !os.IsNotExist(err) {
+			log.Warn("Failed to clear cache: %v", err)
+		} else {
+			log.Info("Cache cleared")
+		}
+	}
 
 	// Parse modules list
 	modules, err := parseModulesList(modulesFile)
@@ -109,10 +124,10 @@ func runPrefill() error {
 	}
 	log.Info("Loaded %d modules from %s", len(modules), modulesFile)
 
-	// Resolve dependencies
+	// Resolve dependencies with cache support
 	log.Info("Resolving dependencies...")
-	resolver := resolver.NewResolver(workDir)
-	resolvedModules, err := resolver.ResolveDependencies(modules)
+	res := resolver.NewResolverWithCacheControl(workDir, useCache)
+	resolvedModules, err := res.ResolveDependencies(modules)
 	if err != nil {
 		return fmt.Errorf("failed to resolve dependencies: %w", err)
 	}

@@ -7,13 +7,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/example/go-mod-clone/internal/gomod"
 	"github.com/example/go-mod-clone/internal/log"
 )
 
 type Resolver struct {
-	workDir string
+	workDir   string
+	cacheFile string
+	useCache  bool
+}
+
+// ResolutionCache stores resolved modules with metadata
+type ResolutionCache struct {
+	Version       string              `json:"version"`
+	CachedAt      time.Time           `json:"cached_at"`
+	Modules       []gomod.Module      `json:"modules"`
+	InputSpecs    []gomod.ModuleSpec  `json:"input_specs"`
+	InputChecksum string              `json:"input_checksum"`
 }
 
 type modInfo struct {
@@ -28,10 +40,100 @@ type modInfo struct {
 }
 
 func NewResolver(workDir string) *Resolver {
-	return &Resolver{workDir: workDir}
+	return &Resolver{
+		workDir:   workDir,
+		cacheFile: filepath.Join(workDir, "resolution-cache.json"),
+		useCache:  true,
+	}
+}
+
+func NewResolverWithCacheControl(workDir string, useCache bool) *Resolver {
+	return &Resolver{
+		workDir:   workDir,
+		cacheFile: filepath.Join(workDir, "resolution-cache.json"),
+		useCache:  useCache,
+	}
+}
+
+// calculateInputChecksum creates a simple checksum of input specs
+func (r *Resolver) calculateInputChecksum(specs []gomod.ModuleSpec) string {
+	var input string
+	for _, spec := range specs {
+		input += spec.Path + "@" + spec.Version + "|"
+	}
+	// Simple checksum: just hash the string representation
+	return fmt.Sprintf("%x", len(input))
+}
+
+// loadCache attempts to load resolution results from cache file
+func (r *Resolver) loadCache(specs []gomod.ModuleSpec) *ResolutionCache {
+	if !r.useCache {
+		log.Debug("Cache disabled, skipping cache load")
+		return nil
+	}
+
+	data, err := os.ReadFile(r.cacheFile)
+	if err != nil {
+		log.Debug("Cache file not found or unreadable: %v", err)
+		return nil
+	}
+
+	var cache ResolutionCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		log.Error("Failed to parse cache file: %v", err)
+		return nil
+	}
+
+	// Verify input specs match
+	expectedChecksum := r.calculateInputChecksum(specs)
+	if cache.InputChecksum != expectedChecksum {
+		log.Info("Cache invalidated: input specs changed")
+		return nil
+	}
+
+	log.Info("Loaded resolution cache from %s (%d modules)", r.cacheFile, len(cache.Modules))
+	return &cache
+}
+
+// saveCache saves resolution results to cache file
+func (r *Resolver) saveCache(specs []gomod.ModuleSpec, modules []gomod.Module) error {
+	if !r.useCache {
+		return nil
+	}
+
+	cache := ResolutionCache{
+		Version:       "1.0",
+		CachedAt:      time.Now(),
+		Modules:       modules,
+		InputSpecs:    specs,
+		InputChecksum: r.calculateInputChecksum(specs),
+	}
+
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		log.Error("Failed to marshal cache: %v", err)
+		return err
+	}
+
+	if err := os.WriteFile(r.cacheFile, data, 0644); err != nil {
+		log.Error("Failed to write cache file: %v", err)
+		return err
+	}
+
+	log.Info("Saved resolution cache to %s", r.cacheFile)
+	return nil
 }
 
 func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module, error) {
+	// Try to load from cache first
+	if cache := r.loadCache(specs); cache != nil {
+		log.Info("Using cached resolution results (%d modules)", len(cache.Modules))
+		return cache.Modules, nil
+	}
+
+	// Cache miss or disabled, perform full resolution
+	log.Info("Resolving dependencies (cache miss or disabled)")
+
 	// Track resolved modules by Path@Version to avoid duplicates
 	resolvedModules := make(map[string]gomod.Module)
 	var toProcess []gomod.ModuleSpec
@@ -80,6 +182,12 @@ func (r *Resolver) ResolveDependencies(specs []gomod.ModuleSpec) ([]gomod.Module
 	var result []gomod.Module
 	for _, mod := range resolvedModules {
 		result = append(result, mod)
+	}
+
+	// Save to cache for next run
+	if err := r.saveCache(specs, result); err != nil {
+		log.Error("Failed to save cache: %v", err)
+		// Don't fail the whole operation if cache save fails
 	}
 
 	return result, nil
